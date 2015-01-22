@@ -100,7 +100,7 @@ func (sc *SendConnection) IsOpen() bool {
 	return sc.isOpen
 }
 
-func CalcNewAckMask(lastSeen, currentSeq, currentMask uint32) (mask, seq uint32) {
+func calcNewAckMask(lastSeen, currentSeq, currentMask uint32) (mask, seq uint32) {
 	const maskDepth = 32
 	if lastSeen < currentSeq { // New SEQ
 		// update the last seen data for new packets
@@ -143,7 +143,7 @@ func (lc *ListenConnection) Read() (*Packet, *net.UDPAddr, error) {
 	}
 
 	// calculate new ack masks and last seen seq numbers
-	lc.lastAckMask, lc.lastSeenSeq = CalcNewAckMask(lc.lastSeenSeq, p.Seq, lc.lastAckMask)
+	lc.lastAckMask, lc.lastSeenSeq = calcNewAckMask(lc.lastSeenSeq, p.Seq, lc.lastAckMask)
 
 	return p, addr, nil
 }

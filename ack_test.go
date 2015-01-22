@@ -138,12 +138,12 @@ func TestAckMessages(t *testing.T) {
 }
 
 func doAckTest(t *testing.T, lss, curmask, cur, expmask, expseq uint32) {
-	mask, seq := CalcNewAckMask(lss, cur, curmask)
+	mask, seq := calcNewAckMask(lss, cur, curmask)
 	if mask == expmask && seq == expseq {
-		t.Logf("CalcNewAckMask(%x,%x,%x) got expected %x,%x\n",
+		t.Logf("calcNewAckMask(%x,%x,%x) got expected %x,%x\n",
 			lss, cur, curmask, expmask, expseq)
 	} else {
-		t.Errorf("CalcNewAckMask(%x,%x,%x) expected %x,%x but got %x,%x\n",
+		t.Errorf("calcNewAckMask(%x,%x,%x) expected %x,%x but got %x,%x\n",
 			lss, cur, curmask, expmask, expseq, mask, seq)
 	}
 }
