@@ -13,13 +13,14 @@ type Packet struct {
 	ClientId    uint32
 	Seq         uint32
 	Chan        uint8
+	AckMask			uint32
 	PayloadSize uint32
 	Payload     []byte
 }
 
 var (
 	byteOrder     = binary.BigEndian
-	payloadOffset = binary.Size(uint32(1))*3 + binary.Size(uint8(1))
+	payloadOffset = binary.Size(uint32(1))*4 + binary.Size(uint8(1))
 )
 
 func NewPacket(id uint32, seq uint32, ch uint8, size uint32, b []byte) (*Packet, error) {
@@ -27,6 +28,7 @@ func NewPacket(id uint32, seq uint32, ch uint8, size uint32, b []byte) (*Packet,
 	p.ClientId = id
 	p.Seq = seq
 	p.Chan = ch
+	p.AckMask = 0x0000
 
 	p.PayloadSize = size
 	p.Payload = make([]byte, size)
@@ -54,6 +56,12 @@ func (p *Packet) WriteTo(b *bytes.Buffer) error {
 	err = binary.Write(b, byteOrder, p.Chan)
 	if err != nil {
 		return fmt.Errorf("Error while writing the channel from packet to buffer.\n%v", err)
+	}
+
+	// ack mask
+	err = binary.Write(b, byteOrder, p.AckMask)
+	if err != nil {
+		return fmt.Errorf("Error while writing the ACK bitmask from packet to buffer.\n%v", err)
 	}
 
 	// payload size
@@ -84,6 +92,7 @@ func NewPacketFrom(n int, b []byte) (*Packet, error) {
 	binary.Read(buf, byteOrder, &p.ClientId)
 	binary.Read(buf, byteOrder, &p.Seq)
 	binary.Read(buf, byteOrder, &p.Chan)
+	binary.Read(buf, byteOrder, &p.AckMask)
 	binary.Read(buf, byteOrder, &p.PayloadSize)
 
 	// resize if necessary

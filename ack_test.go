@@ -1,0 +1,176 @@
+/* Copyright 2015, Timothy Bogdala <tdb@animal-machine.com>
+   See the LICENSE file for more details. */
+
+/*
+
+This test creates a basic server and tries to connect
+to it as a client.
+
+Make sure to run with the `-cpu` flag for multi-core testing!
+
+  go test -cpu 4
+
+*/
+
+package netpeddler
+
+import (
+	"fmt"
+	"runtime"
+	"testing"
+	"time"
+)
+
+var (
+	ackTestListenAddress = "127.0.0.1:42002"
+)
+
+const (
+	ackTestServerBufferSize = 1500
+	ackTestCount            = 10
+)
+
+func ackTestServer(t *testing.T, ch chan int) {
+	npConn, err := CreateListener(ackTestListenAddress, ackTestServerBufferSize)
+	if err != nil {
+		ch <- serverListenFail
+		t.Errorf("Failed to resolve the address to listen on for the server.\n%v\n", err)
+		return
+	}
+
+	defer npConn.Close() // safeguard
+
+	// let the test know we're ready
+	ch <- serverReady
+
+	for {
+		runtime.Gosched()
+		select {
+		case _ = <-ch:
+			// the only signal we should get on the channel is quit, so close out
+			npConn.Close()
+			return
+		default:
+			// attempt to read in a packet, block until it happens
+			p, _, err := npConn.Read()
+			if err != nil {
+				ch <- serverFailedRead
+				t.Errorf("Failed to read data from UDP.\n%v\n", err)
+			} else {
+				t.Logf("Packet: %v\n", string(p.Payload[:p.PayloadSize]))
+			}
+		}
+	}
+}
+
+func ackTestClient(t *testing.T, ch chan int) {
+	npConn, err := CreateSender(ackTestListenAddress)
+	if err != nil {
+		t.Errorf("Client failed to resolve the address to send to.\n%v\n", err)
+		return
+	}
+	defer npConn.Close()
+
+	var i uint32
+	for i = 1; i <= ackTestCount; i++ {
+		// create a packet to send
+		testPayload := []byte(fmt.Sprintf("Ack Test %d", i))
+		packet, err := NewPacket(42, i, 0, uint32(len(testPayload)), testPayload)
+		if err != nil {
+			ch <- clientSendFail
+			t.Errorf("Failed to create client packet.\n%v\n", err)
+			return
+		}
+
+		// send the packet
+		err = npConn.Send(packet)
+		if err != nil {
+			ch <- clientSendFail
+			t.Errorf("Client failed to send data.\n%v\n", err)
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+	ch <- clientSuccess
+}
+
+func TestAckMessages(t *testing.T) {
+	// communicate over a simple channel to coordinate the test
+	serverChan := make(chan int)
+	clientChan := make(chan int)
+
+	// launch the server
+	go ackTestServer(t, serverChan)
+
+	// wait until it's ready for connections then spawn the client routine
+	for signal := range serverChan {
+		if signal == serverReady {
+			t.Logf("Server is ready for connections.\n")
+			break
+		} else if signal == serverListenFail {
+			t.Error("Couldn't set up server correctly.\n")
+			t.FailNow()
+		} else {
+			t.Logf("Unknown message id on test channel.\n")
+			t.FailNow()
+		}
+	}
+
+	// launch the client
+	go ackTestClient(t, clientChan)
+
+	// check for success
+	if result := <-clientChan; result != clientSuccess {
+		t.Error("Client failed to connect.\n")
+		t.FailNow()
+	}
+
+	t.Logf("Client connection was successful.\n")
+
+}
+
+func doAckTest(t *testing.T, lss, curmask, cur, expmask, expseq uint32) {
+	mask, seq := CalcNewAckMask(lss, cur, curmask)
+	if mask == expmask && seq == expseq {
+		t.Logf("CalcNewAckMask(%x,%x,%x) got expected %x,%x\n",
+			lss, cur, curmask, expmask, expseq)
+	} else {
+		t.Errorf("CalcNewAckMask(%x,%x,%x) expected %x,%x but got %x,%x\n",
+			lss, cur, curmask, expmask, expseq, mask, seq)
+	}
+}
+
+func TestAckCalculations(t *testing.T) {
+	//     lss | curmask | cur | expmask |e xpseq
+	// basic seq progression
+	// mask goes from 0000 0000  ->  0000 0001.
+	doAckTest(t, 0, 0x0000, 1, 0x0001, 1)
+	// mask goes from 0000 0001  ->  0000 00011.
+	doAckTest(t, 1, 0x0001, 2, 0x0003, 2)
+
+	// the jump between seq 2 -> 5 moves the mask over
+	// mask goes from 0000 0011  ->  0001 1001.
+	doAckTest(t, 2, 0x0003, 5, 0x0019, 5)
+
+	// an old seq comes in
+	// mask goes from 0001 1001  ->  0001 1101.
+	doAckTest(t, 5, 0x0019, 3, 0x001D, 5)
+	// mask goes from 0001 1001  ->  0001 1111.
+	doAckTest(t, 5, 0x001D, 4, 0x001F, 5)
+
+	// a repeat seq? shouldn't happen, but lets test
+	doAckTest(t, 5, 0x001F, 5, 0x001F, 5)
+	doAckTest(t, 5, 0x001F, 2, 0x001F, 5)
+
+	// a normal progression
+	// mask goes from 0001 1111  ->  0011 1111.
+	doAckTest(t, 5, 0x001F, 6, 0x003F, 6)
+	// mask goes from 0011 1111  ->  01111 1111.
+	doAckTest(t, 6, 0x003F, 7, 0x007F, 7)
+	// mask goes from 0111 1111  ->  11111 1111.
+	doAckTest(t, 7, 0x007F, 8, 0x00FF, 8)
+
+	// test a big jump wiping out the mask
+	doAckTest(t, 8, 0x00FF, 50, 0x0001, 50)
+}
