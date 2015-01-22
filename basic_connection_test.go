@@ -78,7 +78,7 @@ func client(t *testing.T, ch chan int) {
 
 	// create a packet to send
 	testPayload := []byte("Connection seems to work!")
-	packet, err := NewPacket(42, 1, 7, uint32(len(testPayload)), testPayload)
+	packet, err := NewPacket(42, 1, 7, 0, uint32(len(testPayload)), testPayload)
 	if err != nil {
 		ch <- clientSendFail
 		t.Errorf("Failed to create client packet.\n%v", err)

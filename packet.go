@@ -13,7 +13,7 @@ type Packet struct {
 	ClientId    uint32
 	Seq         uint32
 	Chan        uint8
-	AckMask			uint32
+	AckMask     uint32
 	PayloadSize uint32
 	Payload     []byte
 }
@@ -23,12 +23,12 @@ var (
 	payloadOffset = binary.Size(uint32(1))*4 + binary.Size(uint8(1))
 )
 
-func NewPacket(id uint32, seq uint32, ch uint8, size uint32, b []byte) (*Packet, error) {
+func NewPacket(id uint32, seq uint32, ch uint8, m uint32, size uint32, b []byte) (*Packet, error) {
 	p := new(Packet)
 	p.ClientId = id
 	p.Seq = seq
 	p.Chan = ch
-	p.AckMask = 0x0000
+	p.AckMask = m
 
 	p.PayloadSize = size
 	p.Payload = make([]byte, size)

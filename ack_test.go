@@ -16,21 +16,18 @@ package netpeddler
 
 import (
 	"fmt"
-	"runtime"
 	"testing"
-	"time"
 )
 
 var (
-	ackTestListenAddress = "127.0.0.1:42002"
+	ackTestListenAddress = "127.0.0.1:42004"
 )
 
 const (
 	ackTestServerBufferSize = 1500
-	ackTestCount            = 10
 )
 
-func ackTestServer(t *testing.T, ch chan int) {
+func ackTestServer(t *testing.T, ch chan int, clientCh chan int) {
 	npConn, err := CreateListener(ackTestListenAddress, ackTestServerBufferSize)
 	if err != nil {
 		ch <- serverListenFail
@@ -43,24 +40,30 @@ func ackTestServer(t *testing.T, ch chan int) {
 	// let the test know we're ready
 	ch <- serverReady
 
-	for {
-		runtime.Gosched()
-		select {
-		case _ = <-ch:
-			// the only signal we should get on the channel is quit, so close out
-			npConn.Close()
-			return
-		default:
-			// attempt to read in a packet, block until it happens
-			p, _, err := npConn.Read()
-			if err != nil {
-				ch <- serverFailedRead
-				t.Errorf("Failed to read data from UDP.\n%v\n", err)
-			} else {
-				t.Logf("Packet: %v\n", string(p.Payload[:p.PayloadSize]))
-			}
+	// attempt to read in a packet, block until it happens
+	var i uint32
+	secArray := []uint32{1, 2, 5, 3, 4, 5, 2, 6, 7, 8, 50}
+	lssArray := []uint32{1, 2, 5, 5, 5, 5, 5, 6, 7, 8, 50}
+	maskArray := []uint32{0x01, 0x03, 0x19, 0x1D, 0x1F, 0x01F, 0x1F, 0x3F, 0x7F, 0xFF, 0x01}
+	t.Logf("Server is starting seq packet request loop.\n")
+	for i = 0; i < uint32(len(secArray)); i++ {
+		// tell the client what sequence to use
+		clientCh <- int(secArray[i])
+
+		p, _, err := npConn.Read()
+		if err != nil {
+			ch <- serverFailedRead
+			t.Errorf("Failed to read data from UDP.\n%v\n", err)
+		}
+		if npConn.lastSeenSeq == lssArray[i] && npConn.lastAckMask == maskArray[i] {
+			t.Logf("Server got correct seq and ack masks: %v\n", string(p.Payload[:p.PayloadSize]))
+		} else {
+			t.Errorf("Server wanted seq,ackmask of %d,%x and got %d,%x\n",
+				lssArray[i], maskArray[i], npConn.lastSeenSeq, npConn.lastAckMask)
 		}
 	}
+
+	ch <- clientSuccess
 }
 
 func ackTestClient(t *testing.T, ch chan int) {
@@ -71,26 +74,27 @@ func ackTestClient(t *testing.T, ch chan int) {
 	}
 	defer npConn.Close()
 
-	var i uint32
-	for i = 1; i <= ackTestCount; i++ {
-		// create a packet to send
-		testPayload := []byte(fmt.Sprintf("Ack Test %d", i))
-		packet, err := NewPacket(42, i, 0, uint32(len(testPayload)), testPayload)
-		if err != nil {
-			ch <- clientSendFail
-			t.Errorf("Failed to create client packet.\n%v\n", err)
-			return
-		}
+	for {
+		select {
+		case packetSeq := <-ch:
+			// create a packet to send
+			testPayload := []byte(fmt.Sprintf("Ack Test %d", packetSeq))
+			packet, err := NewPacket(42, uint32(packetSeq), 0, 0, uint32(len(testPayload)), testPayload)
+			if err != nil {
+				t.Errorf("Failed to create client packet.\n%v\n", err)
+				return
+			}
 
-		// send the packet
-		err = npConn.Send(packet)
-		if err != nil {
-			ch <- clientSendFail
-			t.Errorf("Client failed to send data.\n%v\n", err)
-			return
-		}
+			// send the packet
+			err = npConn.Send(packet)
+			if err != nil {
+				t.Errorf("Client failed to send data.\n%v\n", err)
+				return
+			}
 
-		time.Sleep(10 * time.Millisecond)
+		default:
+			// nothing
+		}
 	}
 	ch <- clientSuccess
 }
@@ -101,33 +105,36 @@ func TestAckMessages(t *testing.T) {
 	clientChan := make(chan int)
 
 	// launch the server
-	go ackTestServer(t, serverChan)
+	go ackTestServer(t, serverChan, clientChan)
 
 	// wait until it's ready for connections then spawn the client routine
-	for signal := range serverChan {
-		if signal == serverReady {
-			t.Logf("Server is ready for connections.\n")
-			break
-		} else if signal == serverListenFail {
-			t.Error("Couldn't set up server correctly.\n")
-			t.FailNow()
-		} else {
-			t.Logf("Unknown message id on test channel.\n")
-			t.FailNow()
-		}
+	signal := <-serverChan
+	if signal == serverReady {
+		t.Logf("Server is ready for connections.\n")
+	} else {
+		t.Error("Couldn't set up server correctly.\n")
+		t.FailNow()
 	}
 
 	// launch the client
 	go ackTestClient(t, clientChan)
 
 	// check for success
-	if result := <-clientChan; result != clientSuccess {
-		t.Error("Client failed to connect.\n")
-		t.FailNow()
+	for {
+		select {
+		case result := <-serverChan:
+			if result != clientSuccess {
+				t.Error("Client failed to connect.\n")
+				t.FailNow()
+			} else {
+				return
+			}
+		default:
+			//
+		}
 	}
 
 	t.Logf("Client connection was successful.\n")
-
 }
 
 func doAckTest(t *testing.T, lss, curmask, cur, expmask, expseq uint32) {
