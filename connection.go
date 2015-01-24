@@ -5,9 +5,9 @@ package netpeddler
 
 import (
 	"bytes"
+	"container/list"
 	"fmt"
 	"net"
-	"container/list"
 	"time"
 )
 
@@ -25,8 +25,8 @@ type Sender struct {
 	RemoteAddress *net.UDPAddr
 	buffer        bytes.Buffer
 	isOpen        bool
-	acksNeeded		*list.List
-	nextSeq uint32
+	acksNeeded    *list.List
+	nextSeq       uint32
 }
 
 const (
@@ -248,7 +248,7 @@ func (sc *Sender) RetryReliablePackets() error {
 	return nil
 }
 
-func (sc *Sender)retryIfNeeded(rp *ReliablePacket)  (resent bool, maxErrors bool, err error) {
+func (sc *Sender) retryIfNeeded(rp *ReliablePacket) (resent bool, maxErrors bool, err error) {
 	// is it time for a resend?
 	t := time.Now()
 	if t.Before(rp.nextCheck) {

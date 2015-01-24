@@ -1,7 +1,6 @@
 /* Copyright 2015, Timothy Bogdala <tdb@animal-machine.com>
    See the LICENSE file for more details. */
 
-
 package netpeddler
 
 import (
@@ -18,7 +17,6 @@ const (
 	reliablePingPongCount = 10
 )
 
-
 func reliableServer(t *testing.T, ch chan int) {
 	listener, err := CreateListener(reliableTestListenAddress, testServerBufferSize)
 	if err != nil {
@@ -32,7 +30,7 @@ func reliableServer(t *testing.T, ch chan int) {
 	ch <- serverReady
 
 	var sender *Sender = nil
-	for pp:=1; pp<=reliablePingPongCount; pp++ {
+	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// attempt to read in a packet, block until it happens
 		p, clientAddr, err := listener.Read()
 		if err != nil {
@@ -48,7 +46,7 @@ func reliableServer(t *testing.T, ch chan int) {
 		// send a packet back to the client assuming they're listening in on the
 		// same address they sent from
 		if sender == nil {
-		sender, err = CreateSender(clientAddr.String())
+			sender, err = CreateSender(clientAddr.String())
 			if err != nil {
 				ch <- serverFailedRead
 				t.Errorf("Server failed to resolve the address to send to.\n%v", err)
@@ -78,8 +76,6 @@ func reliableServer(t *testing.T, ch chan int) {
 	}
 }
 
-
-
 func reliableClient(t *testing.T, ch chan int) {
 	sender, err := CreateSender(reliableTestListenAddress)
 	if err != nil {
@@ -99,7 +95,7 @@ func reliableClient(t *testing.T, ch chan int) {
 	defer listener.Close()
 	t.Logf("Client listener created.\n")
 
-	for pp:=1; pp<=reliablePingPongCount; pp++ {
+	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// create a packet to send
 		testPayload := []byte(fmt.Sprintf("PING%d", pp))
 		packet, err := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
