@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	ackTestListenAddress = "127.0.0.1:42004"
+	ackTestListenAddress = "127.0.0.1:42002"
 )
 
 const (
@@ -79,14 +79,15 @@ func ackTestClient(t *testing.T, ch chan int) {
 		case packetSeq := <-ch:
 			// create a packet to send
 			testPayload := []byte(fmt.Sprintf("Ack Test %d", packetSeq))
-			packet, err := NewPacket(42, uint32(packetSeq), 0, 0, uint32(len(testPayload)), testPayload)
+			packet, err := NewPacket(42, uint32(packetSeq), 0, 0, 0, uint32(len(testPayload)), testPayload)
 			if err != nil {
 				t.Errorf("Failed to create client packet.\n%v\n", err)
 				return
 			}
 
 			// send the packet
-			err = npConn.Send(packet)
+			// NOTE: generating new acks disabled since tests rely on preset values
+			err = npConn.Send(packet, false)
 			if err != nil {
 				t.Errorf("Client failed to send data.\n%v\n", err)
 				return

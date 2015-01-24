@@ -7,12 +7,26 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
 )
+
+type PacketEvent func(sc *Sender, rp *ReliablePacket) error
+
+type ReliablePacket struct {
+	Packet *Packet
+	RetryInterval time.Duration
+	OnAck PacketEvent
+	OnFailToAck PacketEvent
+	RetryCount uint8
+	nextCheck time.Time
+	failCount	uint8
+}
 
 type Packet struct {
 	ClientId    uint32
 	Seq         uint32
 	Chan        uint8
+	AckSeq      uint32
 	AckMask     uint32
 	PayloadSize uint32
 	Payload     []byte
@@ -20,14 +34,19 @@ type Packet struct {
 
 var (
 	byteOrder     = binary.BigEndian
-	payloadOffset = binary.Size(uint32(1))*4 + binary.Size(uint8(1))
+	payloadOffset = binary.Size(uint32(1))*5 + binary.Size(uint8(1))
 )
 
-func NewPacket(id uint32, seq uint32, ch uint8, m uint32, size uint32, b []byte) (*Packet, error) {
+const (
+	ackMaskDepth      = 32
+)
+
+func NewPacket(id uint32, seq uint32, ch uint8, ack uint32, m uint32, size uint32, b []byte) (*Packet, error) {
 	p := new(Packet)
 	p.ClientId = id
 	p.Seq = seq
 	p.Chan = ch
+	p.AckSeq = ack
 	p.AckMask = m
 
 	p.PayloadSize = size
@@ -56,6 +75,12 @@ func (p *Packet) WriteTo(b *bytes.Buffer) error {
 	err = binary.Write(b, byteOrder, p.Chan)
 	if err != nil {
 		return fmt.Errorf("Error while writing the channel from packet to buffer.\n%v", err)
+	}
+
+	// ack sequence
+	err = binary.Write(b, byteOrder, p.AckSeq)
+	if err != nil {
+		return fmt.Errorf("Error while writing the ACK sequence from packet to buffer.\n%v", err)
 	}
 
 	// ack mask
@@ -92,6 +117,7 @@ func NewPacketFrom(n int, b []byte) (*Packet, error) {
 	binary.Read(buf, byteOrder, &p.ClientId)
 	binary.Read(buf, byteOrder, &p.Seq)
 	binary.Read(buf, byteOrder, &p.Chan)
+	binary.Read(buf, byteOrder, &p.AckSeq)
 	binary.Read(buf, byteOrder, &p.AckMask)
 	binary.Read(buf, byteOrder, &p.PayloadSize)
 
@@ -106,4 +132,37 @@ func NewPacketFrom(n int, b []byte) (*Packet, error) {
 	copy(p.Payload, b[payloadOffset:])
 
 	return p, nil
+}
+
+func MakeReliable(p *Packet, retryInterval time.Duration, retryCount uint8) *ReliablePacket {
+	rp := new(ReliablePacket)
+	rp.Packet = p
+	rp.RetryInterval = retryInterval
+	rp.RetryCount = retryCount
+	rp.OnAck = nil
+	rp.OnFailToAck = nil
+	rp.nextCheck = time.Now().Add(retryInterval)
+	rp.failCount = 0
+	return rp
+}
+
+func (p *Packet) IsAckBy(ackPacket *Packet) bool {
+	// if ack packet's seq is below the packets, then it can't possibly ack it
+	if ackPacket.AckSeq < p.Seq {
+		return false
+	}
+
+	// if the packet's seq is not within the bitfield depth of the ack packet,
+	// then it can't possibly ack it
+	seqDiff := ackPacket.AckSeq - p.Seq
+	if seqDiff >= ackMaskDepth {
+		return false
+	}
+
+	var mask uint32 = (0x0001 << seqDiff)
+	if ackPacket.AckMask & mask > 0x00 {
+		return true
+	} else {
+		return false
+	}
 }

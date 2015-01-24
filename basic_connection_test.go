@@ -33,9 +33,11 @@ const (
 	serverListenFail
 	serverGotConnectionMsg
 	serverFailedRead
+	serverFailedSend
 	clientSuccess
 	clientDialFail
 	clientSendFail
+	clientListenFail
 )
 
 func server(t *testing.T, ch chan int) {
@@ -63,7 +65,7 @@ func server(t *testing.T, ch chan int) {
 
 			// self destruct
 			npConn.Close()
-			break
+			return
 		}
 	}
 }
@@ -78,7 +80,7 @@ func client(t *testing.T, ch chan int) {
 
 	// create a packet to send
 	testPayload := []byte("Connection seems to work!")
-	packet, err := NewPacket(42, 1, 7, 0, uint32(len(testPayload)), testPayload)
+	packet, err := NewPacket(42, 1, 7, 0, 0, uint32(len(testPayload)), testPayload)
 	if err != nil {
 		ch <- clientSendFail
 		t.Errorf("Failed to create client packet.\n%v", err)
@@ -86,7 +88,7 @@ func client(t *testing.T, ch chan int) {
 	}
 
 	// send the packet
-	err = npConn.Send(packet)
+	err = npConn.Send(packet, true)
 	if err != nil {
 		ch <- clientSendFail
 		t.Errorf("Client failed to send data.\n%v", err)
@@ -104,18 +106,13 @@ func TestBasicConnection(t *testing.T) {
 	// launch the server
 	go server(t, serverChan)
 
-	// wait until it's ready for connections then spawn the client routine
-	for signal := range serverChan {
-		if signal == serverReady {
-			t.Logf("Server is ready for connections.\n")
-			break
-		} else if signal == serverListenFail {
-			t.Error("Couldn't set up server correctly.")
-			t.FailNow()
-		} else {
-			t.Logf("Unknown message id on test channel.\n")
-			t.FailNow()
-		}
+	// wait until it's ready for connections
+	signal := <-serverChan
+	if signal == serverReady {
+		t.Logf("Server is ready for connections.\n")
+	} else {
+		t.Errorf("Couldn't set up server correctly (%d).", signal)
+		t.FailNow()
 	}
 
 	// launch the client
