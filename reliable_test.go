@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	reliableTestListenAddress = "127.0.0.1:42003"
+	reliableTestPort = 42003
 )
 
 const (
@@ -18,21 +18,20 @@ const (
 )
 
 func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
-	listener, err := CreateListener(reliableTestListenAddress, testServerBufferSize)
+	npConn, err := NewConnection(testServerBufferSize, fmt.Sprintf("127.0.0.1:%d", reliableTestPort), "")
 	if err != nil {
 		ch <- serverListenFail
 		t.Errorf("Failed to resolve the address to listen on for the server.\n%v", err)
 		return
 	}
-	defer listener.Close()
+	defer npConn.Close()
 
 	// let the test know we're ready
 	ch <- serverReady
 
-	var sender *Sender = nil
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// attempt to read in a packet, block until it happens
-		p, clientAddr, err := listener.Read()
+		p, clientAddr, err := npConn.Read()
 		if err != nil {
 			ch <- serverFailedRead
 			t.Errorf("Failed to read data from UDP.\n%v", err)
@@ -41,25 +40,14 @@ func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
 
 		// We got the packet
 		t.Logf("Server got packet: %v\n", string(p.Payload[:p.PayloadSize]))
-		t.Logf("Listener's last seq: %d ; ack mask: %x", listener.lastSeenSeq, listener.lastAckMask)
+		t.Logf("Listener's last seq: %d ; ack mask: %x", npConn.lastSeenSeq, npConn.lastAckMask)
 
 		// send a packet back to the client assuming they're listening in on the
 		// same address they sent from
-		if sender == nil {
-			sender, err = CreateSender(clientAddr.String())
-			if err != nil {
-				ch <- serverFailedRead
-				t.Errorf("Server failed to resolve the address to send to.\n%v", err)
-				return
-			}
-			defer sender.Close()
-			t.Logf("Server created sender connection.\n")
-		}
-
 		if !onlyTestFinal || pp == reliablePingPongCount {
 			// make a new packet that would be like a 'keep alive' packet
 			testPayload := []byte("PONG")
-			pong, err := NewPacket(0, 1, 7, listener.lastSeenSeq, listener.lastAckMask, uint32(len(testPayload)), testPayload)
+			pong, err := NewPacket(0, 1, 7, npConn.lastSeenSeq, npConn.lastAckMask, uint32(len(testPayload)), testPayload)
 			if err != nil {
 				ch <- serverFailedSend
 				t.Errorf("Server failed to create response packet.\n%v", err)
@@ -68,7 +56,7 @@ func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
 
 			// send the PING
 			t.Logf("Server sending packet.\n")
-			err = sender.Send(pong, true)
+			err = npConn.Send(pong, true, clientAddr)
 			if err != nil {
 				ch <- serverFailedSend
 				t.Errorf("Client failed to send data.\n%v", err)
@@ -79,23 +67,12 @@ func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
 }
 
 func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
-	sender, err := CreateSender(reliableTestListenAddress)
+	npConn, err := NewConnection(testServerBufferSize, "", fmt.Sprintf("127.0.0.1:%d", reliableTestPort))
 	if err != nil {
-		t.Errorf("Client failed to resolve the address to send to.\n%v", err)
+		ch <- clientListenFail
+		t.Errorf("Failed to setup the client connection.\n%v", err)
 		return
 	}
-	defer sender.Close()
-
-	listenerAddr := sender.Socket.LocalAddr()
-	t.Logf("Creating client listener on local addr: %v\n", listenerAddr)
-	listener, err := CreateListener(listenerAddr.String(), testServerBufferSize)
-	if err != nil {
-		ch <- clientSendFail
-		t.Errorf("Failed to resolve the address to listen on for the client.\n%v", err)
-		return
-	}
-	defer listener.Close()
-	t.Logf("Client listener created.\n")
 
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// create a packet to send
@@ -110,7 +87,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 		t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
 
 		// send the PING
-		err = sender.SendReliable(packet, true, time.Second, 5)
+		err = npConn.SendReliable(packet, true, time.Second, 5, nil)
 		if err != nil {
 			ch <- clientSendFail
 			t.Errorf("Client failed to send data.\n%v", err)
@@ -119,7 +96,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 
 		if !onlyTestFinal || pp == reliablePingPongCount {
 			// now wait for the PONG
-			p, _, err := listener.Read()
+			p, _, err := npConn.Read()
 			if err != nil {
 				ch <- clientListenFail
 				t.Errorf("Client failed to read data on listener.\n%v", err)
@@ -133,7 +110,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 			if onlyTestFinal {
 				expectedAcksNeeded = pp
 			}
-			ackLen := sender.GetAcksNeededLen()
+			ackLen := npConn.GetAcksNeededLen()
 			t.Logf("Client looking for %d acks\n", ackLen)
 			if ackLen != expectedAcksNeeded {
 				ch <- clientListenFail
@@ -142,10 +119,10 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 			}
 
 			// proccess acks from the incoming packet
-			sender.ProccessAcks(p)
+			npConn.ProccessAcks(p)
 
 			// TEST: make sure no more packets are being monitored
-			ackLen = sender.GetAcksNeededLen()
+			ackLen = npConn.GetAcksNeededLen()
 			if ackLen != 0 {
 				ch <- clientListenFail
 				t.Errorf("Client's sender ack needed count was incorrect after incoming packet (%d).\n", ackLen)

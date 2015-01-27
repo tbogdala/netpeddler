@@ -15,6 +15,7 @@ Make sure to run with the `-cpu` flag for multi-core testing!
 package netpeddler
 
 import (
+	"fmt"
 	"math/rand"
 	"runtime"
 	"testing"
@@ -22,7 +23,7 @@ import (
 )
 
 var (
-	largeTestListenAddress = "127.0.0.1:42001"
+	largeTestPort = 42001
 )
 
 const (
@@ -30,7 +31,7 @@ const (
 )
 
 func largeTestServer(t *testing.T, ch chan int) {
-	npConn, err := CreateListener(largeTestListenAddress, largeTestServerBufferSize)
+	npConn, err := NewConnection(largeTestServerBufferSize, fmt.Sprintf("127.0.0.1:%d", basicTestPort), "")
 	if err != nil {
 		ch <- serverListenFail
 		t.Errorf("Failed to resolve the address to listen on for the server.\n%v", err)
@@ -61,7 +62,7 @@ func largeTestServer(t *testing.T, ch chan int) {
 }
 
 func largeTestClient(t *testing.T, ch chan int) {
-	npConn, err := CreateSender(largeTestListenAddress)
+	npConn, err := NewConnection(largeTestServerBufferSize, "", fmt.Sprintf("127.0.0.1:%d", largeTestPort))
 	if err != nil {
 		t.Errorf("Client failed to resolve the address to send to.\n%v", err)
 		return
@@ -84,7 +85,7 @@ func largeTestClient(t *testing.T, ch chan int) {
 	}
 
 	// send the packet
-	err = npConn.Send(packet, true)
+	err = npConn.Send(packet, true, nil)
 	if err != nil {
 		ch <- clientSendFail
 		t.Errorf("Client failed to send data.\n%v", err)

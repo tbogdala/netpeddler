@@ -4,31 +4,32 @@
 package netpeddler
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
 
 var (
-	retryTestListenAddress = "127.0.0.1:42004"
-	retryTestCount         = 0
-	retrySpeed             = time.Millisecond * 100
+	retryTestPort  = 42004
+	retryTestCount = 0
+	retrySpeed     = time.Millisecond * 100
 )
 
 func retryServer(t *testing.T, ch chan int) {
-	listener, err := CreateListener(retryTestListenAddress, testServerBufferSize)
+	npConn, err := NewConnection(testServerBufferSize, fmt.Sprintf("127.0.0.1:%d", retryTestPort), "")
 	if err != nil {
 		ch <- serverListenFail
 		t.Errorf("Failed to resolve the address to listen on for the server.\n%v", err)
 		return
 	}
-	defer listener.Close()
+	defer npConn.Close()
 
 	// let the test know we're ready
 	ch <- serverReady
 
 	for {
 		// attempt to read in a packet, block until it happens
-		p, _, err := listener.Read()
+		p, _, err := npConn.Read()
 		if err != nil {
 			ch <- serverFailedRead
 			t.Errorf("Failed to read data from UDP.\n%v", err)
@@ -37,19 +38,19 @@ func retryServer(t *testing.T, ch chan int) {
 
 		// We got the packet
 		t.Logf("Server got packet: %v\n", string(p.Payload[:p.PayloadSize]))
-		t.Logf("Listener's last seq: %d ; ack mask: %x", listener.lastSeenSeq, listener.lastAckMask)
+		t.Logf("Listener's last seq: %d ; ack mask: %x", npConn.lastSeenSeq, npConn.lastAckMask)
 
 		retryTestCount++
 	}
 }
 
 func retryClient(t *testing.T, ch chan int) {
-	sender, err := CreateSender(retryTestListenAddress)
+	npConn, err := NewConnection(testServerBufferSize, "", fmt.Sprintf("127.0.0.1:%d", retryTestPort))
 	if err != nil {
 		t.Errorf("Client failed to resolve the address to send to.\n%v", err)
 		return
 	}
-	defer sender.Close()
+	defer npConn.Close()
 
 	testPayload := []byte("PING")
 	packet, err := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
@@ -63,7 +64,7 @@ func retryClient(t *testing.T, ch chan int) {
 
 	// send the PING
 	const retryCount = 5
-	err = sender.SendReliable(packet, true, retrySpeed, retryCount)
+	err = npConn.SendReliable(packet, true, retrySpeed, retryCount, nil)
 	if err != nil {
 		ch <- clientSendFail
 		t.Errorf("Client failed to send data.\n%v", err)
@@ -72,7 +73,7 @@ func retryClient(t *testing.T, ch chan int) {
 
 	endTime := time.Now().Add(retrySpeed * (retryCount + 1))
 	for {
-		sender.Tick()
+		npConn.Tick()
 		if time.Now().After(endTime) {
 			// we should have our retry count now
 			if retryCount != retryTestCount-1 { //-1 for the first packet sent

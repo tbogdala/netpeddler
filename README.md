@@ -29,6 +29,9 @@ Usage
 For now, users can browse the test files for examples on how to use netpeddler.
 
 * basic_connection_test.go
+* large_connection_test.go
+* reliable_test.go
+* retry_test.go
 
 
 License

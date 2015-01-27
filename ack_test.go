@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	ackTestListenAddress = "127.0.0.1:42002"
+	ackTestPort = 42002
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 )
 
 func ackTestServer(t *testing.T, ch chan int, clientCh chan int) {
-	npConn, err := CreateListener(ackTestListenAddress, ackTestServerBufferSize)
+	npConn, err := NewConnection(ackTestServerBufferSize, fmt.Sprintf("127.0.0.1:%d", ackTestPort), "")
 	if err != nil {
 		ch <- serverListenFail
 		t.Errorf("Failed to resolve the address to listen on for the server.\n%v\n", err)
@@ -67,7 +67,7 @@ func ackTestServer(t *testing.T, ch chan int, clientCh chan int) {
 }
 
 func ackTestClient(t *testing.T, ch chan int) {
-	npConn, err := CreateSender(ackTestListenAddress)
+	npConn, err := NewConnection(ackTestServerBufferSize, "127.0.0.1:0", fmt.Sprintf("127.0.0.1:%d", ackTestPort))
 	if err != nil {
 		t.Errorf("Client failed to resolve the address to send to.\n%v\n", err)
 		return
@@ -87,7 +87,7 @@ func ackTestClient(t *testing.T, ch chan int) {
 
 			// send the packet
 			// NOTE: generating new acks disabled since tests rely on preset values
-			err = npConn.Send(packet, false)
+			err = npConn.Send(packet, false, nil)
 			if err != nil {
 				t.Errorf("Client failed to send data.\n%v\n", err)
 				return

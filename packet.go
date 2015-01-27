@@ -7,19 +7,21 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"time"
 )
 
-type PacketEvent func(sc *Sender, rp *ReliablePacket) error
+type PacketEvent func(c *Connection, rp *ReliablePacket) error
 
 type ReliablePacket struct {
-	Packet *Packet
+	Packet        *Packet
 	RetryInterval time.Duration
-	OnAck PacketEvent
-	OnFailToAck PacketEvent
-	RetryCount uint8
-	nextCheck time.Time
-	failCount	uint8
+	RemoteAddress *net.UDPAddr
+	OnAck         PacketEvent
+	OnFailToAck   PacketEvent
+	RetryCount    uint8
+	nextCheck     time.Time
+	failCount     uint8
 }
 
 type Packet struct {
@@ -38,7 +40,7 @@ var (
 )
 
 const (
-	ackMaskDepth      = 32
+	ackMaskDepth = 32
 )
 
 func NewPacket(id uint32, seq uint32, ch uint8, ack uint32, m uint32, size uint32, b []byte) (*Packet, error) {
@@ -160,7 +162,7 @@ func (p *Packet) IsAckBy(ackPacket *Packet) bool {
 	}
 
 	var mask uint32 = (0x0001 << seqDiff)
-	if ackPacket.AckMask & mask > 0x00 {
+	if ackPacket.AckMask&mask > 0x00 {
 		return true
 	} else {
 		return false
