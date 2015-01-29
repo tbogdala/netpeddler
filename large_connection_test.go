@@ -77,12 +77,7 @@ func largeTestClient(t *testing.T, ch chan int) {
 		testPayload[i] = byte(rand.Intn(255))
 	}
 
-	packet, err := NewPacket(42, 1, 7, 0, 0, uint32(amount), testPayload)
-	if err != nil {
-		ch <- clientSendFail
-		t.Errorf("Failed to create client packet.\n%v", err)
-		return
-	}
+	packet := NewPacket(42, 1, 7, 0, 0, uint32(amount), testPayload)
 
 	// send the packet
 	err = npConn.Send(packet, true, nil)

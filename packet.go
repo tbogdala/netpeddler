@@ -43,7 +43,7 @@ const (
 	ackMaskDepth = 32
 )
 
-func NewPacket(id uint32, seq uint32, ch uint8, ack uint32, m uint32, size uint32, b []byte) (*Packet, error) {
+func NewPacket(id uint32, seq uint32, ch uint8, ack uint32, m uint32, size uint32, b []byte) *Packet {
 	p := new(Packet)
 	p.ClientId = id
 	p.Seq = seq
@@ -55,7 +55,7 @@ func NewPacket(id uint32, seq uint32, ch uint8, ack uint32, m uint32, size uint3
 	p.Payload = make([]byte, size)
 	copy(p.Payload, b)
 
-	return p, nil
+	return p
 }
 
 func (p *Packet) WriteTo(b *bytes.Buffer) error {

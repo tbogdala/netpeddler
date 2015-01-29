@@ -47,12 +47,7 @@ func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
 		if !onlyTestFinal || pp == reliablePingPongCount {
 			// make a new packet that would be like a 'keep alive' packet
 			testPayload := []byte("PONG")
-			pong, err := NewPacket(0, 1, 7, npConn.lastSeenSeq, npConn.lastAckMask, uint32(len(testPayload)), testPayload)
-			if err != nil {
-				ch <- serverFailedSend
-				t.Errorf("Server failed to create response packet.\n%v", err)
-				return
-			}
+			pong := NewPacket(0, 1, 7, npConn.lastSeenSeq, npConn.lastAckMask, uint32(len(testPayload)), testPayload)
 
 			// send the PING
 			t.Logf("Server sending packet.\n")
@@ -77,13 +72,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// create a packet to send
 		testPayload := []byte(fmt.Sprintf("PING%d", pp))
-		packet, err := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
-		if err != nil {
-			ch <- clientSendFail
-			t.Errorf("Failed to create client packet.\n%v", err)
-			return
-		}
-
+		packet := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
 		t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
 
 		// send the PING

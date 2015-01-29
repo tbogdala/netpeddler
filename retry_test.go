@@ -53,13 +53,7 @@ func retryClient(t *testing.T, ch chan int) {
 	defer npConn.Close()
 
 	testPayload := []byte("PING")
-	packet, err := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
-	if err != nil {
-		ch <- clientSendFail
-		t.Errorf("Failed to create client packet.\n%v", err)
-		return
-	}
-
+	packet := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
 	t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
 
 	// send the PING
