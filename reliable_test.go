@@ -69,6 +69,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 		return
 	}
 
+	var gotAcked bool = false
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// create a packet to send
 		testPayload := []byte(fmt.Sprintf("PING%d", pp))
@@ -76,7 +77,11 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 		t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
 
 		// send the PING
-		err = npConn.SendReliable(packet, true, time.Second, 5, nil)
+		rp := MakeReliable(packet, time.Second, 5)
+		rp.OnAck = func(c *Connection, rp *ReliablePacket) {
+			gotAcked = true
+		}
+		err = npConn.SendReliable(rp, true, nil)
 		if err != nil {
 			ch <- clientSendFail
 			t.Errorf("Client failed to send data.\n%v", err)
@@ -120,6 +125,12 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 		}
 	}
 
+	// TEST: make sure the OnAck callback worked
+	if gotAcked == false {
+		t.Errorf("The OnAck callback was never triggered.\n")
+		return
+	}
+
 	ch <- clientSuccess
 }
 
@@ -154,7 +165,7 @@ func TestReliablePackets(t *testing.T) {
 
 }
 
-// TestReliablePackets tests for PING/PONG reliability after pooling up
+// TestReliablePackets2 tests for PING/PONG reliability after pooling up
 // all of the test packets by having the server only reply at the end
 func TestReliablePackets2(t *testing.T) {
 	// communicate over a simple channel to coordinate the test
@@ -183,5 +194,52 @@ func TestReliablePackets2(t *testing.T) {
 	}
 
 	t.Logf("Client connection was successful.")
+
+}
+
+
+// TestReliablePackets3 tests for an ACK fail by not even setting up
+// a server and just sending a packet into nothing ...
+func TestReliablePackets3(t *testing.T) {
+	npConn, err := NewConnection(testServerBufferSize, "", fmt.Sprintf("127.0.0.1:%d", reliableTestPort))
+	if err != nil {
+		t.Errorf("TestReliablePackets3 failed to setup the client connection.\n%v", err)
+		return
+	}
+
+	const secondsToWait = 2
+	var gotAckFailed bool = false
+
+	// create a packet to send
+	testPayload := []byte("PING")
+	packet := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
+	t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
+
+	// send the PING
+	rp := MakeReliable(packet, time.Second, secondsToWait)
+	rp.OnFailToAck = func(c *Connection, rp *ReliablePacket) {
+		gotAckFailed = true
+	}
+	err = npConn.SendReliable(rp, true, nil)
+	if err != nil {
+		t.Errorf("Client failed to send data.\n%v", err)
+		return
+	}
+
+	testStart := time.Now()
+	for {
+		if time.Now().Sub(testStart) > time.Second * (secondsToWait+1) {
+			t.Errorf("TestReliablePackets3 did not get an OnFailToAck event in time.\n")
+			return
+		}
+
+		// tick the server
+		npConn.Tick()
+
+		if gotAckFailed {
+			t.Logf("TestReliablePackets3 got the OnFailToAck event. ...\n")
+			return
+		}
+	}
 
 }

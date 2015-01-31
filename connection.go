@@ -171,9 +171,7 @@ func (c *Connection) Send(p *Packet, generateNewSeq bool, remote *net.UDPAddr) e
 	return nil
 }
 
-func (c *Connection) SendReliable(p *Packet, generateNewSeq bool, retryInterval time.Duration, retryCount uint8, remote *net.UDPAddr) error {
-	// construct the reliable packet structure
-	rp := MakeReliable(p, retryInterval, retryCount)
+func (c *Connection) SendReliable(rp *ReliablePacket, generateNewSeq bool, remote *net.UDPAddr) error {
 	rp.RemoteAddress = remote
 
 	// try to send the packet

@@ -58,7 +58,8 @@ func retryClient(t *testing.T, ch chan int) {
 
 	// send the PING
 	const retryCount = 5
-	err = npConn.SendReliable(packet, true, retrySpeed, retryCount, nil)
+	rp := MakeReliable(packet, retrySpeed, retryCount)
+	err = npConn.SendReliable(rp, true, nil)
 	if err != nil {
 		ch <- clientSendFail
 		t.Errorf("Client failed to send data.\n%v", err)

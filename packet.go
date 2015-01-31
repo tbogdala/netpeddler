@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type PacketEvent func(c *Connection, rp *ReliablePacket) error
+type PacketEvent func(c *Connection, rp *ReliablePacket)
 
 type ReliablePacket struct {
 	Packet        *Packet
