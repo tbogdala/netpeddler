@@ -175,6 +175,10 @@ func (c *Connection) Send(p *Packet, generateNewSeq bool, remote *net.UDPAddr) e
 		p.Seq = c.GetNextSeq()
 	}
 
+	// update the ack data
+	p.AckSeq = c.GetLastSeenSeq()
+	p.AckMask = c.GetAckMask()
+
 	// encode the packet to binary
 	p.WriteTo(&c.packetBuffer)
 
