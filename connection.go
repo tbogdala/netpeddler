@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+type ConnectionReadEvent func(c *Connection, p *Packet, addr *net.UDPAddr)
+
 type Connection struct {
 	Socket        *net.UDPConn
 	ListenAddress *net.UDPAddr
@@ -21,6 +23,10 @@ type Connection struct {
 	// to not be ideal and therefore can be turned off.
 	UpdateAcksOnRead bool
 
+	// OnPacketRead is called from Tick() when a packet is successfully read
+	// in from the network connection.
+	OnPacketRead ConnectionReadEvent
+
 	buffer        []byte
 	packetBuffer  bytes.Buffer
 	isOpen        bool
@@ -28,6 +34,7 @@ type Connection struct {
 	lastAckMask   uint32
 	acksNeeded    *list.List
 	nextSeq       uint32
+	readTimeout time.Duration
 }
 
 const (
@@ -77,6 +84,8 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 	newConn.lastAckMask = 0
 	newConn.acksNeeded = list.New()
 	newConn.nextSeq = 1
+	newConn.readTimeout = time.Nanosecond
+	newConn.OnPacketRead = nil
 	return &newConn, nil
 }
 
@@ -208,6 +217,20 @@ func (c *Connection) GetAcksNeededLen() int {
 func (c *Connection) Tick() error {
 	// check for packets that need to be retried
 	err := c.RetryReliablePackets()
+
+	// listen for a packet
+	c.Socket.SetReadDeadline(time.Now().Add(c.readTimeout))
+	p, addr, err := c.Read()
+	if err == nil && p != nil {
+		// if the OnPacketRead event is defined, fire that
+		if c.OnPacketRead != nil {
+			c.OnPacketRead(c, p, addr)
+		}
+
+		// update any packets that are awaiting their ACK
+		c.ProccessAcks(p)
+	}
+
 	return err
 }
 
