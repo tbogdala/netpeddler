@@ -15,6 +15,12 @@ type Connection struct {
 	Socket        *net.UDPConn
 	ListenAddress *net.UDPAddr
 	RemoteAddress *net.UDPAddr
+
+	// UpdateAcksOnRead indicates if Read() should update the lastAckMask and lastSeenSeq
+	// fields. When a connection is used to read from many clients this may turn out
+	// to not be ideal and therefore can be turned off.
+	UpdateAcksOnRead bool
+
 	buffer        []byte
 	packetBuffer  bytes.Buffer
 	isOpen        bool
@@ -65,6 +71,7 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 	} else {
 		newConn.buffer = make([]byte, defaultBufferSize)
 	}
+	newConn.UpdateAcksOnRead = true
 	newConn.isOpen = true
 	newConn.lastSeenSeq = 0
 	newConn.lastAckMask = 0
@@ -90,31 +97,33 @@ func (c *Connection) GetAckMask() uint32 {
 	return c.lastAckMask
 }
 
-func calcNewAckMask(lastSeen, currentSeq, currentMask uint32) (mask, seq uint32) {
+//c.lastAckMask, c.lastSeenSeq = c.CalcAckMask(c.lastSeenSeq, p.Seq, c.lastAckMask)
+// func (c*CalcAckMask(lastSeen, currentSeq, currentMask uint32) (mask, seq uint32) {
+func (c *Connection) CalcAckMask(currentSeq uint32) (mask, seq uint32) {
 	const maskDepth = 32
-	if lastSeen < currentSeq { // New SEQ
+	if c.lastSeenSeq < currentSeq { // New SEQ
 		// update the last seen data for new packets
-		seqDiff := currentSeq - lastSeen
+		seqDiff := currentSeq - c.lastSeenSeq
 		if seqDiff < maskDepth && seqDiff > 0 {
 			// shift the old acks down appropriately
-			mask = currentMask << seqDiff
+			c.lastAckMask = c.lastAckMask << seqDiff
 		} else {
 			// nothing is close enough to remember
-			mask = 0x0000
+			c.lastAckMask = 0x0000
 		}
 
 		// update the last seen seq and flag itself in the mask.
-		seq = currentSeq
-		mask = mask | 0x0001
+		c.lastSeenSeq = currentSeq
+		c.lastAckMask = c.lastAckMask | 0x0001
 	} else { // Old SEQ
 		// see if the older packet needs an ack set
-		seqDiff := lastSeen - currentSeq
+		seqDiff := c.lastSeenSeq - currentSeq
 		if seqDiff < maskDepth {
-			mask = currentMask | (0x0001 << seqDiff)
+			c.lastAckMask = c.lastAckMask | (0x0001 << seqDiff)
 		}
 
 		// else if it's too old, just forget about it ... and keep the old last seen seq
-		seq = lastSeen
+		c.lastSeenSeq = c.lastSeenSeq
 	}
 	return
 }
@@ -132,8 +141,11 @@ func (c *Connection) Read() (*Packet, *net.UDPAddr, error) {
 		return nil, nil, fmt.Errorf("Failed to read packet from UDP: %v\n", err)
 	}
 
-	// calculate new ack masks and last seen seq numbers
-	c.lastAckMask, c.lastSeenSeq = calcNewAckMask(c.lastSeenSeq, p.Seq, c.lastAckMask)
+	if c.UpdateAcksOnRead {
+		// calculate new ack masks and last seen seq numbers
+		//c.lastAckMask, c.lastSeenSeq = c.CalcAckMask(c.lastSeenSeq, p.Seq, c.lastAckMask)
+		c.CalcAckMask(p.Seq)
+	}
 
 	return p, addr, nil
 }

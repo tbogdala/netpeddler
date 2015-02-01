@@ -201,7 +201,7 @@ func TestReliablePackets2(t *testing.T) {
 // TestReliablePackets3 tests for an ACK fail by not even setting up
 // a server and just sending a packet into nothing ...
 func TestReliablePackets3(t *testing.T) {
-	npConn, err := NewConnection(testServerBufferSize, "", fmt.Sprintf("127.0.0.1:%d", reliableTestPort))
+	npConn, err := NewConnection(testServerBufferSize, "", fmt.Sprintf("127.0.0.1:%d", reliableTestPort-200))
 	if err != nil {
 		t.Errorf("TestReliablePackets3 failed to setup the client connection.\n%v", err)
 		return
@@ -228,7 +228,7 @@ func TestReliablePackets3(t *testing.T) {
 
 	testStart := time.Now()
 	for {
-		if time.Now().Sub(testStart) > time.Second * (secondsToWait+1) {
+		if time.Now().Sub(testStart) > time.Second * (secondsToWait+2) {
 			t.Errorf("TestReliablePackets3 did not get an OnFailToAck event in time.\n")
 			return
 		}

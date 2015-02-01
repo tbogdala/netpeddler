@@ -135,13 +135,16 @@ func TestAckMessages(t *testing.T) {
 }
 
 func doAckTest(t *testing.T, lss, curmask, cur, expmask, expseq uint32) {
-	mask, seq := calcNewAckMask(lss, cur, curmask)
-	if mask == expmask && seq == expseq {
+	c := new(Connection)
+	c.lastSeenSeq = lss
+	c.lastAckMask = curmask
+	c.CalcAckMask(cur)
+	if c.lastAckMask == expmask && c.lastSeenSeq == expseq {
 		t.Logf("calcNewAckMask(%x,%x,%x) got expected %x,%x\n",
 			lss, cur, curmask, expmask, expseq)
 	} else {
 		t.Errorf("calcNewAckMask(%x,%x,%x) expected %x,%x but got %x,%x\n",
-			lss, cur, curmask, expmask, expseq, mask, seq)
+			lss, cur, curmask, expmask, expseq, c.lastAckMask , c.lastSeenSeq)
 	}
 }
 
