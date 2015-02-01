@@ -214,10 +214,10 @@ func (c *Connection) GetAcksNeededLen() int {
 	return c.acksNeeded.Len()
 }
 
-func (c *Connection) Tick() error {
-	// check for packets that need to be retried
-	err := c.RetryReliablePackets()
-
+// Tick triest to read a packet -- if it finds one it will update the acks --
+// and then it tries to send out any reliable packets as necessary. Returns
+// a bool indicating if a packet was read and a possible error
+func (c *Connection) Tick() (bool, error) {
 	// listen for a packet
 	c.Socket.SetReadDeadline(time.Now().Add(c.readTimeout))
 	p, addr, err := c.Read()
@@ -229,9 +229,14 @@ func (c *Connection) Tick() error {
 
 		// update any packets that are awaiting their ACK
 		c.ProccessAcks(p)
+
+		return true, err
 	}
 
-	return err
+	// check for packets that need to be retried
+	err = c.RetryReliablePackets()
+
+	return false, err
 }
 
 func (c *Connection) ProccessAcks(p *Packet) {
