@@ -27,14 +27,14 @@ type Connection struct {
 	// in from the network connection.
 	OnPacketRead ConnectionReadEvent
 
-	buffer        []byte
-	packetBuffer  bytes.Buffer
-	isOpen        bool
-	lastSeenSeq   uint32
-	lastAckMask   uint32
-	acksNeeded    *list.List
-	nextSeq       uint32
-	readTimeout time.Duration
+	buffer       []byte
+	packetBuffer bytes.Buffer
+	isOpen       bool
+	lastSeenSeq  uint32
+	lastAckMask  uint32
+	acksNeeded   *list.List
+	nextSeq      uint32
+	readTimeout  time.Duration
 }
 
 const (
@@ -84,8 +84,12 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 	newConn.lastAckMask = 0
 	newConn.acksNeeded = list.New()
 	newConn.nextSeq = 1
-	newConn.readTimeout = time.Nanosecond
 	newConn.OnPacketRead = nil
+
+	// It appears that some platforms are sensitive to the value that's added here.
+	// For example, on Linux, 1 ns results in no packets being read, but 100 ns works.
+	// On Windows, 1 ns works okay.
+	newConn.readTimeout = time.Nanosecond * 100
 	return &newConn, nil
 }
 
