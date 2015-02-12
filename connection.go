@@ -34,7 +34,7 @@ type Connection struct {
 	lastAckMask  uint32
 	acksNeeded   *list.List
 	nextSeq      uint32
-	readTimeout  time.Duration
+	ReadTimeout  time.Duration
 }
 
 const (
@@ -74,6 +74,10 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 
 	newConn.Socket = conn
 	if bufferSize > 0 {
+		// Setting the buffer size on the connection is important, but more important
+		// it seems in Linux, where you might blast through the buffer quickly.
+		conn.SetReadBuffer(int(bufferSize))
+		conn.SetWriteBuffer(int(bufferSize))
 		newConn.buffer = make([]byte, bufferSize)
 	} else {
 		newConn.buffer = make([]byte, defaultBufferSize)
@@ -87,9 +91,9 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 	newConn.OnPacketRead = nil
 
 	// It appears that some platforms are sensitive to the value that's added here.
-	// For example, on Linux, 1 ns results in no packets being read, but 100 ns works.
+	// For example, on Linux, 1 ns results in no packets being read, but 1 ms works.
 	// On Windows, 1 ns works okay.
-	newConn.readTimeout = time.Nanosecond * 100
+	newConn.ReadTimeout = time.Millisecond
 	return &newConn, nil
 }
 
@@ -227,7 +231,7 @@ func (c *Connection) GetAcksNeededLen() int {
 // a bool indicating if a packet was read and a possible error
 func (c *Connection) Tick() (bool, error) {
 	// listen for a packet
-	c.Socket.SetReadDeadline(time.Now().Add(c.readTimeout))
+	c.Socket.SetReadDeadline(time.Now().Add(c.ReadTimeout))
 	p, addr, err := c.Read()
 	if err == nil && p != nil {
 		// if the OnPacketRead event is defined, fire that
