@@ -41,8 +41,27 @@ const (
 	defaultBufferSize = 1500
 )
 
-func NewConnection(bufferSize uint32, localAddress string, remoteAddress string) (*Connection, error) {
+func New(bufferSize uint32) *Connection {
 	var newConn Connection
+	newConn.buffer = make([]byte, bufferSize)
+	newConn.UpdateAcksOnRead = true
+	newConn.isOpen = false
+	newConn.lastSeenSeq = 0
+	newConn.lastAckMask = 0
+	newConn.acksNeeded = list.New()
+	newConn.nextSeq = 1
+	newConn.OnPacketRead = nil
+
+	// It appears that some platforms are sensitive to the value that's added here.
+	// For example, on Linux, 1 ns results in no packets being read, but 1 ms works.
+	// On Windows, 1 ns works okay.
+	newConn.ReadTimeout = time.Millisecond
+
+	return &newConn
+}
+
+func NewConnection(bufferSize uint32, localAddress string, remoteAddress string) (*Connection, error) {
+	newConn := New(bufferSize)
 
 	// resolve the local address to use for listening
 	localAddressOpt := localAddress
@@ -78,23 +97,10 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 		// it seems in Linux, where you might blast through the buffer quickly.
 		conn.SetReadBuffer(int(bufferSize))
 		conn.SetWriteBuffer(int(bufferSize))
-		newConn.buffer = make([]byte, bufferSize)
-	} else {
-		newConn.buffer = make([]byte, defaultBufferSize)
 	}
-	newConn.UpdateAcksOnRead = true
 	newConn.isOpen = true
-	newConn.lastSeenSeq = 0
-	newConn.lastAckMask = 0
-	newConn.acksNeeded = list.New()
-	newConn.nextSeq = 1
-	newConn.OnPacketRead = nil
 
-	// It appears that some platforms are sensitive to the value that's added here.
-	// For example, on Linux, 1 ns results in no packets being read, but 1 ms works.
-	// On Windows, 1 ns works okay.
-	newConn.ReadTimeout = time.Millisecond
-	return &newConn, nil
+	return newConn, nil
 }
 
 func (c *Connection) Close() {
@@ -102,8 +108,16 @@ func (c *Connection) Close() {
 	c.Socket.Close()
 }
 
+func (c *Connection) ResizeBuffer(bufferSize uint32) {
+	c.buffer = make([]byte, bufferSize)
+}
+
 func (c *Connection) IsOpen() bool {
 	return c.isOpen
+}
+
+func (c *Connection) SetIsOpen(o bool) {
+	c.isOpen = o
 }
 
 func (c *Connection) GetLastSeenSeq() uint32 {
