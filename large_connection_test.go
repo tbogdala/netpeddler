@@ -31,7 +31,7 @@ const (
 )
 
 func largeTestServer(t *testing.T, ch chan int) {
-	npConn, err := NewConnection(largeTestServerBufferSize, fmt.Sprintf("127.0.0.1:%d", basicTestPort), "")
+	npConn, err := NewConnection(largeTestServerBufferSize, fmt.Sprintf("127.0.0.1:%d", largeTestPort), "")
 	if err != nil {
 		ch <- serverListenFail
 		t.Errorf("Failed to resolve the address to listen on for the server.\n%v", err)
