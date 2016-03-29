@@ -1,14 +1,10 @@
-/* Copyright 2015, Timothy Bogdala <tdb@animal-machine.com>
+/* Copyright 2016, Timothy Bogdala <tdb@animal-machine.com>
    See the LICENSE file for more details. */
 
 /*
 
 This test creates a basic server and tries to connect
 to it as a client.
-
-Make sure to run with the `-cpu` flag for multi-core testing!
-
-  go test -cpu 4
 
 */
 

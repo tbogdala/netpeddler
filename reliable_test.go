@@ -1,4 +1,4 @@
-/* Copyright 2015, Timothy Bogdala <tdb@animal-machine.com>
+/* Copyright 2016, Timothy Bogdala <tdb@animal-machine.com>
    See the LICENSE file for more details. */
 
 package netpeddler
@@ -197,7 +197,6 @@ func TestReliablePackets2(t *testing.T) {
 
 }
 
-
 // TestReliablePackets3 tests for an ACK fail by not even setting up
 // a server and just sending a packet into nothing ...
 func TestReliablePackets3(t *testing.T) {
@@ -228,7 +227,7 @@ func TestReliablePackets3(t *testing.T) {
 
 	testStart := time.Now()
 	for {
-		if time.Now().Sub(testStart) > time.Second * (secondsToWait+2) {
+		if time.Now().Sub(testStart) > time.Second*(secondsToWait+2) {
 			t.Errorf("TestReliablePackets3 did not get an OnFailToAck event in time.\n")
 			return
 		}

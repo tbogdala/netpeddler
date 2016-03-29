@@ -1,4 +1,4 @@
-/* Copyright 2015, Timothy Bogdala <tdb@animal-machine.com>
+/* Copyright 2016, Timothy Bogdala <tdb@animal-machine.com>
    See the LICENSE file for more details. */
 
 /*
@@ -144,7 +144,7 @@ func doAckTest(t *testing.T, lss, curmask, cur, expmask, expseq uint32) {
 			lss, cur, curmask, expmask, expseq)
 	} else {
 		t.Errorf("calcNewAckMask(%x,%x,%x) expected %x,%x but got %x,%x\n",
-			lss, cur, curmask, expmask, expseq, c.lastAckMask , c.lastSeenSeq)
+			lss, cur, curmask, expmask, expseq, c.lastAckMask, c.lastSeenSeq)
 	}
 }
 
