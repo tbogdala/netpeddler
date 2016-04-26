@@ -90,16 +90,6 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 		}
 
 		if !onlyTestFinal || pp == reliablePingPongCount {
-			// now wait for the PONG
-			p, err := npConn.Read()
-			if err != nil {
-				ch <- clientListenFail
-				t.Errorf("Client failed to read data on listener.\n%v", err)
-				return
-			}
-
-			t.Logf("Client got packet: %+v\n", string(p.Payload[:p.PayloadSize]))
-
 			// TEST: make sure we just have 1 packet being monitored for ack
 			expectedAcksNeeded := 1
 			if onlyTestFinal {
@@ -113,8 +103,15 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 				return
 			}
 
-			// proccess acks from the incoming packet
-			npConn.ProccessAcks(p)
+			// now wait for the PONG
+			p, err := npConn.Read()
+			if err != nil {
+				ch <- clientListenFail
+				t.Errorf("Client failed to read data on listener.\n%v", err)
+				return
+			}
+
+			t.Logf("Client got packet: %+v\n", string(p.Payload[:p.PayloadSize]))
 
 			// TEST: make sure no more packets are being monitored
 			ackLen = npConn.GetAcksNeededLen()
@@ -208,7 +205,7 @@ func TestReliablePackets3(t *testing.T) {
 	}
 
 	const secondsToWait = 2
-	var gotAckFailed bool 
+	var gotAckFailed bool
 
 	// create a packet to send
 	testPayload := []byte("PING")

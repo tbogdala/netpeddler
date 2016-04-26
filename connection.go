@@ -162,6 +162,10 @@ func (c *Connection) CalcAckMask(currentSeq uint32) (mask, seq uint32) {
 	return
 }
 
+// Read attempts to read a UDP packet from the connection in a synchronous way.
+// If data was read, it constructs a new packet object, updates the ack masks
+// if desired and then returns it.
+// NOTE: this function
 func (c *Connection) Read() (*Packet, error) {
 	// read the raw data in from the UDP connection
 	n, addr, err := c.Socket.ReadFromUDP(c.buffer)
@@ -183,6 +187,14 @@ func (c *Connection) Read() (*Packet, error) {
 		//c.lastAckMask, c.lastSeenSeq = c.CalcAckMask(c.lastSeenSeq, p.Seq, c.lastAckMask)
 		c.CalcAckMask(p.Seq)
 	}
+
+	// if the OnPacketRead event is defined, fire that
+	if c.OnPacketRead != nil {
+		c.OnPacketRead(c, p)
+	}
+
+	// update any packets that are awaiting their ACK
+	c.ProccessAcks(p)
 
 	return p, nil
 }
@@ -254,20 +266,14 @@ func (c *Connection) Tick() (bool, error) {
 	c.Socket.SetReadDeadline(time.Now().Add(c.ReadTimeout))
 	p, err := c.Read()
 	if err == nil && p != nil {
-		// if the OnPacketRead event is defined, fire that
-		if c.OnPacketRead != nil {
-			c.OnPacketRead(c, p)
-		}
-
-		// update any packets that are awaiting their ACK
-		c.ProccessAcks(p)
-
 		return true, err
 	}
 
 	// check for packets that need to be retried
 	err = c.RetryReliablePackets()
-
+	if p != nil {
+		return true, err
+	}
 	return false, err
 }
 
