@@ -11,8 +11,13 @@ import (
 	"time"
 )
 
-type ConnectionReadEvent func(c *Connection, p *Packet, addr *net.UDPAddr)
+type ConnectionReadEvent func(c *Connection, p *Packet)
 
+// Connection is the main structure for a network connection. It is designed around
+// a 1:1 relationship between client and server, but members can be tweaked to
+// more readily support 1:* relationship between server and clients.
+// NOTE: Per golang's net documentation, UDPConn can be accessed from multiple
+// threads safely.
 type Connection struct {
 	Socket        *net.UDPConn
 	ListenAddress *net.UDPAddr
@@ -128,8 +133,6 @@ func (c *Connection) GetAckMask() uint32 {
 	return c.lastAckMask
 }
 
-//c.lastAckMask, c.lastSeenSeq = c.CalcAckMask(c.lastSeenSeq, p.Seq, c.lastAckMask)
-// func (c*CalcAckMask(lastSeen, currentSeq, currentMask uint32) (mask, seq uint32) {
 func (c *Connection) CalcAckMask(currentSeq uint32) (mask, seq uint32) {
 	const maskDepth = 32
 	if c.lastSeenSeq < currentSeq { // New SEQ
@@ -154,23 +157,26 @@ func (c *Connection) CalcAckMask(currentSeq uint32) (mask, seq uint32) {
 		}
 
 		// else if it's too old, just forget about it ... and keep the old last seen seq
-		c.lastSeenSeq = c.lastSeenSeq
+		// c.lastSeenSeq = c.lastSeenSeq
 	}
 	return
 }
 
-func (c *Connection) Read() (*Packet, *net.UDPAddr, error) {
+func (c *Connection) Read() (*Packet, error) {
 	// read the raw data in from the UDP connection
 	n, addr, err := c.Socket.ReadFromUDP(c.buffer)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to read bytes from UDP: %v\n", err)
+		return nil, fmt.Errorf("Failed to read bytes from UDP: %v\n", err)
 	}
 
 	// construct the packet
 	p, err := NewPacketFrom(n, c.buffer)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to read packet from UDP: %v\n", err)
+		return nil, fmt.Errorf("Failed to read packet from UDP: %v\n", err)
 	}
+
+	// fill in the address the packet was received from
+	p.RemoteAddress = addr
 
 	if c.UpdateAcksOnRead {
 		// calculate new ack masks and last seen seq numbers
@@ -178,7 +184,7 @@ func (c *Connection) Read() (*Packet, *net.UDPAddr, error) {
 		c.CalcAckMask(p.Seq)
 	}
 
-	return p, addr, nil
+	return p, nil
 }
 
 func (c *Connection) GetNextSeq() uint32 {
@@ -219,7 +225,7 @@ func (c *Connection) Send(p *Packet, generateNewSeq bool, remote *net.UDPAddr) e
 }
 
 func (c *Connection) SendReliable(rp *ReliablePacket, generateNewSeq bool, remote *net.UDPAddr) error {
-	rp.RemoteAddress = remote
+	rp.Packet.RemoteAddress = remote
 
 	// try to send the packet
 	err := c.Send(rp.Packet, generateNewSeq, remote)
@@ -246,11 +252,11 @@ func (c *Connection) GetAcksNeededLen() int {
 func (c *Connection) Tick() (bool, error) {
 	// listen for a packet
 	c.Socket.SetReadDeadline(time.Now().Add(c.ReadTimeout))
-	p, addr, err := c.Read()
+	p, err := c.Read()
 	if err == nil && p != nil {
 		// if the OnPacketRead event is defined, fire that
 		if c.OnPacketRead != nil {
-			c.OnPacketRead(c, p, addr)
+			c.OnPacketRead(c, p)
 		}
 
 		// update any packets that are awaiting their ACK
@@ -322,7 +328,7 @@ func (c *Connection) retryIfNeeded(rp *ReliablePacket) (resent bool, maxErrors b
 	// if we have more retrys left, give it another shot
 	if rp.failCount <= rp.RetryCount {
 		resent = true
-		err = c.Send(rp.Packet, true, rp.RemoteAddress)
+		err = c.Send(rp.Packet, true, rp.Packet.RemoteAddress)
 		return true, false, err
 	}
 

@@ -53,7 +53,7 @@ func server(t *testing.T, ch chan int) {
 		runtime.Gosched()
 
 		// attempt to read in a packet, block until it happens
-		p, _, err := npConn.Read()
+		p, err := npConn.Read()
 		if err != nil {
 			ch <- serverFailedRead
 			t.Errorf("Failed to read data from UDP.\n%v", err)

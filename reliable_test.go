@@ -31,12 +31,13 @@ func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
 
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
 		// attempt to read in a packet, block until it happens
-		p, clientAddr, err := npConn.Read()
+		p, err := npConn.Read()
 		if err != nil {
 			ch <- serverFailedRead
 			t.Errorf("Failed to read data from UDP.\n%v", err)
 			return
 		}
+		clientAddr := p.RemoteAddress
 
 		// We got the packet
 		t.Logf("Server got packet: %v\n", string(p.Payload[:p.PayloadSize]))
@@ -77,7 +78,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 		t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
 
 		// send the PING
-		rp := MakeReliable(packet, time.Second, 5)
+		rp := packet.MakeReliable(time.Second, 5)
 		rp.OnAck = func(c *Connection, rp *ReliablePacket) {
 			gotAcked = true
 		}
@@ -90,7 +91,7 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 
 		if !onlyTestFinal || pp == reliablePingPongCount {
 			// now wait for the PONG
-			p, _, err := npConn.Read()
+			p, err := npConn.Read()
 			if err != nil {
 				ch <- clientListenFail
 				t.Errorf("Client failed to read data on listener.\n%v", err)
@@ -207,7 +208,7 @@ func TestReliablePackets3(t *testing.T) {
 	}
 
 	const secondsToWait = 2
-	var gotAckFailed bool = false
+	var gotAckFailed bool 
 
 	// create a packet to send
 	testPayload := []byte("PING")
@@ -215,7 +216,7 @@ func TestReliablePackets3(t *testing.T) {
 	t.Logf("Client sending packet: %+v\n", string(packet.Payload[:packet.PayloadSize]))
 
 	// send the PING
-	rp := MakeReliable(packet, time.Second, secondsToWait)
+	rp := packet.MakeReliable(time.Second, secondsToWait)
 	rp.OnFailToAck = func(c *Connection, rp *ReliablePacket) {
 		gotAckFailed = true
 	}

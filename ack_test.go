@@ -50,7 +50,7 @@ func ackTestServer(t *testing.T, ch chan int, clientCh chan int) {
 		// tell the client what sequence to use
 		clientCh <- int(secArray[i])
 
-		p, _, err := npConn.Read()
+		p, err := npConn.Read()
 		if err != nil {
 			ch <- serverFailedRead
 			t.Errorf("Failed to read data from UDP.\n%v\n", err)

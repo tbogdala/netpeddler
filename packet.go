@@ -16,7 +16,6 @@ type PacketEvent func(c *Connection, rp *ReliablePacket)
 type ReliablePacket struct {
 	Packet        *Packet
 	RetryInterval time.Duration
-	RemoteAddress *net.UDPAddr
 	OnAck         PacketEvent
 	OnFailToAck   PacketEvent
 	RetryCount    uint8
@@ -25,6 +24,7 @@ type ReliablePacket struct {
 }
 
 type Packet struct {
+	RemoteAddress *net.UDPAddr
 	ClientId    uint32
 	Seq         uint32
 	Chan        uint8
@@ -136,7 +136,7 @@ func NewPacketFrom(n int, b []byte) (*Packet, error) {
 	return p, nil
 }
 
-func MakeReliable(p *Packet, retryInterval time.Duration, retryCount uint8) *ReliablePacket {
+func (p *Packet) MakeReliable(retryInterval time.Duration, retryCount uint8) *ReliablePacket {
 	rp := new(ReliablePacket)
 	rp.Packet = p
 	rp.RetryInterval = retryInterval

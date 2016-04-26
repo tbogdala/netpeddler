@@ -29,7 +29,7 @@ func retryServer(t *testing.T, ch chan int) {
 
 	for {
 		// attempt to read in a packet, block until it happens
-		p, _, err := npConn.Read()
+		p, err := npConn.Read()
 		if err != nil {
 			ch <- serverFailedRead
 			t.Errorf("Failed to read data from UDP.\n%v", err)
@@ -58,7 +58,7 @@ func retryClient(t *testing.T, ch chan int) {
 
 	// send the PING
 	const retryCount = 5
-	rp := MakeReliable(packet, retrySpeed, retryCount)
+	rp := packet.MakeReliable(retrySpeed, retryCount)
 	err = npConn.SendReliable(rp, true, nil)
 	if err != nil {
 		ch <- clientSendFail
