@@ -14,7 +14,7 @@ import (
 type PacketEvent func(c *Connection, rp *ReliablePacket)
 
 type ReliablePacket struct {
-	Packet        *Packet
+	*Packet        
 	RetryInterval time.Duration
 	OnAck         PacketEvent
 	OnFailToAck   PacketEvent

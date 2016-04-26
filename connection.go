@@ -1,5 +1,5 @@
-/* Copyright 2016, Timothy Bogdala <tdb@animal-machine.com>
-   See the LICENSE file for more details. */
+// Copyright 2016, Timothy Bogdala <tdb@animal-machine.com>
+// See the LICENSE file for more details.
 
 package netpeddler
 
@@ -60,11 +60,15 @@ func New(bufferSize uint32) *Connection {
 	// It appears that some platforms are sensitive to the value that's added here.
 	// For example, on Linux, 1 ns results in no packets being read, but 1 ms works.
 	// On Windows, 1 ns works okay.
+	// NOTE: this timeout is only used in Tick(); other rears are blocking.
 	newConn.ReadTimeout = time.Millisecond
 
 	return &newConn
 }
 
+// NewConnection creates a new Connection object with a new UDP Socket and
+// local and remote addresses resolved. If no localAddress is specified, "127.0.0.1:0"
+// is used. RemoteAddress is only resolved and set if a remoteAddress was supplied.
 func NewConnection(bufferSize uint32, localAddress string, remoteAddress string) (*Connection, error) {
 	newConn := New(bufferSize)
 
@@ -84,9 +88,8 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 		raddr, err := net.ResolveUDPAddr("udp", remoteAddress)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to resolve the remote address: %s\n%v", remoteAddress, err)
-		} else {
-			newConn.RemoteAddress = raddr
 		}
+		newConn.RemoteAddress = raddr
 	}
 
 	// Go's net library still needs a UDPConn connection to access a lot of methods
@@ -107,6 +110,21 @@ func NewConnection(bufferSize uint32, localAddress string, remoteAddress string)
 
 	return newConn, nil
 }
+
+// Clone makes a new Connection object but shares the same underlying Socket and
+// uses potentially different listen and remote addresses.
+// This can be useful for a 1:* relationship when one Socket needs to send to
+// many RemoteAddress's but wants to maintain separate ack and seq for each
+// remote address. By Cloning the Connection, the UDP packets will be sent
+// from the same port to the remote address which is critical for NAT punching.
+func (c *Connection) Clone(listenAddress *net.UDPAddr, remoteAddress *net.UDPAddr) *Connection {
+	newConn := New(uint32(len(c.buffer)))
+	newConn.Socket = c.Socket
+	newConn.ListenAddress = listenAddress
+	newConn.RemoteAddress = remoteAddress
+	return newConn
+}
+
 
 func (c *Connection) Close() {
 	c.isOpen = false
@@ -164,8 +182,7 @@ func (c *Connection) CalcAckMask(currentSeq uint32) (mask, seq uint32) {
 
 // Read attempts to read a UDP packet from the connection in a synchronous way.
 // If data was read, it constructs a new packet object, updates the ack masks
-// if desired and then returns it.
-// NOTE: this function
+// if desired and then returns it. The OnPacketRead event is fired if it's set.
 func (c *Connection) Read() (*Packet, error) {
 	// read the raw data in from the UDP connection
 	n, addr, err := c.Socket.ReadFromUDP(c.buffer)
@@ -186,6 +203,9 @@ func (c *Connection) Read() (*Packet, error) {
 		// calculate new ack masks and last seen seq numbers
 		//c.lastAckMask, c.lastSeenSeq = c.CalcAckMask(c.lastSeenSeq, p.Seq, c.lastAckMask)
 		c.CalcAckMask(p.Seq)
+
+		// update any packets that are awaiting their ACK
+		c.ProccessAcks(p)
 	}
 
 	// if the OnPacketRead event is defined, fire that
@@ -193,18 +213,21 @@ func (c *Connection) Read() (*Packet, error) {
 		c.OnPacketRead(c, p)
 	}
 
-	// update any packets that are awaiting their ACK
-	c.ProccessAcks(p)
-
 	return p, nil
 }
 
+// GetNextSeq returns a new sequence number for the connection and increments
+// the internal counter.
 func (c *Connection) GetNextSeq() uint32 {
 	seq := c.nextSeq
 	c.nextSeq++
 	return seq
 }
 
+// Send sends a packet using the connection's socket to the remote address specified.
+// If no remote address is supplied via parameter, it will use the connection's
+// remote address. If generateNewSeq is true, this method will set the packet's
+// sequence with a newly generated number from the connection.
 func (c *Connection) Send(p *Packet, generateNewSeq bool, remote *net.UDPAddr) error {
 	// generate a new seq number for the packet if requested
 	if generateNewSeq {
@@ -236,6 +259,11 @@ func (c *Connection) Send(p *Packet, generateNewSeq bool, remote *net.UDPAddr) e
 	return nil
 }
 
+// SendReliable sends a packet using the connection's socket to the remote address specified.
+// If no remote address is supplied via parameter, it will use the connection's
+// remote address. If generateNewSeq is true, this method will set the packet's
+// sequence with a newly generated number from the connection.
+// SendReliable also puts the packet in the list of packets awaiting acknowledgment.
 func (c *Connection) SendReliable(rp *ReliablePacket, generateNewSeq bool, remote *net.UDPAddr) error {
 	rp.Packet.RemoteAddress = remote
 
@@ -254,13 +282,15 @@ func (c *Connection) SendReliable(rp *ReliablePacket, generateNewSeq bool, remot
 	return nil
 }
 
+// GetAcksNeededLen returns the number of ReliablePackets that need acknowledgment.
 func (c *Connection) GetAcksNeededLen() int {
 	return c.acksNeeded.Len()
 }
 
 // Tick triest to read a packet -- if it finds one it will update the acks --
 // and then it tries to send out any reliable packets as necessary. Returns
-// a bool indicating if a packet was read and a possible error
+// a bool indicating if a packet was read and a possible error.
+// NOTE: This primarily serves as a shortcut way of reading asynchronously.
 func (c *Connection) Tick() (bool, error) {
 	// listen for a packet
 	c.Socket.SetReadDeadline(time.Now().Add(c.ReadTimeout))
@@ -277,6 +307,9 @@ func (c *Connection) Tick() (bool, error) {
 	return false, err
 }
 
+// ProccessAcks loops through acksNeeded checking to see if any ReliablePacket
+// is ack'd by the packet specified -- if so, the OnAck event is fired and
+// the ReliablePacket is removed from acksNeeded.
 func (c *Connection) ProccessAcks(p *Packet) {
 	e := c.acksNeeded.Front()
 	for e != nil {
@@ -297,6 +330,9 @@ func (c *Connection) ProccessAcks(p *Packet) {
 	}
 }
 
+// RetryReliablePackets loops through acksNeeded and will attempt to resend
+// a ReliablePacket if it's time. If the maximum number of tries was reached
+// then the packet is dropped from the acksNeeded.
 func (c *Connection) RetryReliablePackets() error {
 	// loop through everything and retry if needed
 	e := c.acksNeeded.Front()
@@ -311,6 +347,8 @@ func (c *Connection) RetryReliablePackets() error {
 
 		// if max tries were reached, remove item from list
 		if maxed {
+			// Note: the OnFailToAck event was already fired from
+			// within retryIfNeeded.
 			c.acksNeeded.Remove(e)
 		}
 
@@ -320,6 +358,7 @@ func (c *Connection) RetryReliablePackets() error {
 	return nil
 }
 
+// retryIfNeeded will retry a ReliablePacket if the time limit was hit on nextCheck.
 func (c *Connection) retryIfNeeded(rp *ReliablePacket) (resent bool, maxErrors bool, err error) {
 	// is it time for a resend?
 	t := time.Now()
