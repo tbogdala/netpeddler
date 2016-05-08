@@ -5,6 +5,7 @@ package netpeddler
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -30,6 +31,9 @@ func reliableServer(t *testing.T, ch chan int, onlyTestFinal bool) {
 	ch <- serverReady
 
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
+		// let the scheduler run
+		runtime.Gosched()
+
 		// attempt to read in a packet, block until it happens
 		p, err := npConn.Read()
 		if err != nil {
@@ -72,6 +76,9 @@ func reliableClient(t *testing.T, ch chan int, onlyTestFinal bool) {
 
 	var gotAcked bool = false
 	for pp := 1; pp <= reliablePingPongCount; pp++ {
+		// let the scheduler run
+		runtime.Gosched()
+
 		// create a packet to send
 		testPayload := []byte(fmt.Sprintf("PING%d", pp))
 		packet := NewPacket(42, 0, 0, 0, 0, uint32(len(testPayload)), testPayload)
