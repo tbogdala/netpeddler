@@ -11,10 +11,22 @@ import (
 	"time"
 )
 
+// SendablePacket is an interface for packets that can be sent on a connection which
+// allows client code to make collections of packets that can be sent that contain
+// both reliable and non-reliable packets.
+type SendablePacket interface {
+	// Send the packet on `c` Connection, possibly generating a new sequence number,
+	// to the remote address specified.
+	Send(c *Connection, generateNewSeq bool, remote *net.UDPAddr) error
+
+	// SetRemoteAddress will set the remote address property of the packet.
+	SetRemoteAddress(remote *net.UDPAddr)
+}
+
 type PacketEvent func(c *Connection, rp *ReliablePacket)
 
 type ReliablePacket struct {
-	*Packet        
+	*Packet
 	RetryInterval time.Duration
 	OnAck         PacketEvent
 	OnFailToAck   PacketEvent
@@ -25,13 +37,13 @@ type ReliablePacket struct {
 
 type Packet struct {
 	RemoteAddress *net.UDPAddr
-	ClientId    uint32
-	Seq         uint32
-	Chan        uint8
-	AckSeq      uint32
-	AckMask     uint32
-	PayloadSize uint32
-	Payload     []byte
+	ClientId      uint32
+	Seq           uint32
+	Chan          uint8
+	AckSeq        uint32
+	AckMask       uint32
+	PayloadSize   uint32
+	Payload       []byte
 }
 
 var (
@@ -167,4 +179,36 @@ func (p *Packet) IsAckBy(ackPacket *Packet) bool {
 	} else {
 		return false
 	}
+}
+
+// Send sends a non-reliable packet on the connection specified.
+func (p *Packet) Send(c *Connection, generateNewSeq bool, remote *net.UDPAddr) error {
+	ra := remote
+	if ra == nil {
+		ra = p.RemoteAddress
+	}
+	return c.Send(p, generateNewSeq, ra)
+}
+
+// Send sends a reliable packet on the connection specified.
+func (rp *ReliablePacket) Send(c *Connection, generateNewSeq bool, remote *net.UDPAddr) error {
+	ra := remote
+	if ra == nil {
+		ra = rp.RemoteAddress
+	}
+	if ra == nil {
+		ra = rp.Packet.RemoteAddress
+	}
+	return c.SendReliable(rp, generateNewSeq, ra)
+}
+
+// SetRemoteAddress will set the remote address property of the packet.
+func (p *Packet) SetRemoteAddress(remote *net.UDPAddr) {
+	p.RemoteAddress = remote
+}
+
+// SetRemoteAddress will set the remote address property of the packet.
+func (rp *ReliablePacket) SetRemoteAddress(remote *net.UDPAddr) {
+	rp.Packet.RemoteAddress = remote
+	rp.RemoteAddress = remote
 }

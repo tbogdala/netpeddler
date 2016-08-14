@@ -125,7 +125,6 @@ func (c *Connection) Clone(listenAddress *net.UDPAddr, remoteAddress *net.UDPAdd
 	return newConn
 }
 
-
 func (c *Connection) Close() {
 	c.isOpen = false
 	c.Socket.Close()
@@ -298,7 +297,6 @@ func (c *Connection) Tick() (bool, error) {
 	if err == nil && p != nil {
 		return true, err
 	}
-
 	// check for packets that need to be retried
 	err = c.RetryReliablePackets()
 	if p != nil {
